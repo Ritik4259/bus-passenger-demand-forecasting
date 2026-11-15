@@ -1,0 +1,3 @@
+# 0002: T - 24h Chronological Leakage Boundary with Bundled Historical Lookup
+
+The operational requirement dictates generating passenger demand forecasts exactly 24 hours prior to departure ($T - 24\text{h}$) to support fleet dispatching. We decided that all lag and rolling statistical features must strictly observe a 24-hour cutoff, and the historical route-level statistics required at inference time are bundled directly alongside the `.joblib` model artifact. This eliminates temporal data leakage during training and enables self-contained, real-time FastAPI inference without runtime database dependencies.

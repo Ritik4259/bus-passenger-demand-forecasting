@@ -1,0 +1,117 @@
+{
+  "model_name": "LightGBM",
+  "evaluation_timestamp": "2026-11-14T12:32:30.566801+00:00",
+  "test_dataset_size": 6345,
+  "overall_metrics": {
+    "sample_count": 6345,
+    "mae": 7.404,
+    "rmse": 10.131,
+    "wape": 0.3733,
+    "wape_percentage": 37.33
+  },
+  "temporal_breakdown": {
+    "peak_hours": {
+      "sample_count": 2673,
+      "mae": 8.864,
+      "rmse": 12.021,
+      "wape": 0.3653,
+      "wape_percentage": 36.53
+    },
+    "off_peak_hours": {
+      "sample_count": 3672,
+      "mae": 6.342,
+      "rmse": 8.494,
+      "wape": 0.3819,
+      "wape_percentage": 38.19
+    }
+  },
+  "per_route_breakdown": {
+    "INT_CAMPUS_404": {
+      "sample_count": 2052,
+      "mae": 7.538,
+      "rmse": 10.412,
+      "wape": 0.3652,
+      "wape_percentage": 36.52,
+      "route_name": "LPU Main Gate - Block 34 / Uni-Hospital (Campus Loop)",
+      "capacity": 60
+    },
+    "JAL_ASR_505": {
+      "sample_count": 702,
+      "mae": 3.603,
+      "rmse": 4.542,
+      "wape": 0.4112,
+      "wape_percentage": 41.12,
+      "route_name": "Jalandhar Cantt - Phagwara GT Road Feeder",
+      "capacity": 35
+    },
+    "LPU_JAL_101": {
+      "sample_count": 1539,
+      "mae": 7.519,
+      "rmse": 10.051,
+      "wape": 0.3661,
+      "wape_percentage": 36.61,
+      "route_name": "LPU Main Gate - Jalandhar Bus Stand (via Rama Mandi)",
+      "capacity": 50
+    },
+    "LPU_MDL_303": {
+      "sample_count": 1026,
+      "mae": 8.891,
+      "rmse": 12.171,
+      "wape": 0.3836,
+      "wape_percentage": 38.36,
+      "route_name": "LPU Campus - Model Town, Jalandhar",
+      "capacity": 45
+    },
+    "PHG_LPU_202": {
+      "sample_count": 1026,
+      "mae": 8.079,
+      "rmse": 10.204,
+      "wape": 0.3776,
+      "wape_percentage": 37.76,
+      "route_name": "Phagwara Junction Station - LPU Campus",
+      "capacity": 40
+    }
+  },
+  "action_flag_performance": {
+    "overall_accuracy": 0.7486,
+    "overflow_risk_recall": 0.7672,
+    "classification_details": {
+      "OPTIMAL": {
+        "precision": 0.4608241439349971,
+        "recall": 0.5687679083094556,
+        "f1-score": 0.5091375440846425,
+        "support": 1396.0
+      },
+      "OVERFLOW_RISK": {
+        "precision": 0.46292134831460674,
+        "recall": 0.7672253258845437,
+        "f1-score": 0.5774351786965662,
+        "support": 537.0
+      },
+      "UNDERUTILIZED": {
+        "precision": 0.9496248660235799,
+        "recall": 0.8032638259292838,
+        "f1-score": 0.8703339882121808,
+        "support": 4412.0
+      },
+      "accuracy": 0.7486209613869188,
+      "macro avg": {
+        "precision": 0.6244567860910611,
+        "recall": 0.713085686707761,
+        "f1-score": 0.6523022369977965,
+        "support": 6345.0
+      },
+      "weighted avg": {
+        "precision": 0.8008895473403049,
+        "recall": 0.7486209613869188,
+        "f1-score": 0.7660760060668808,
+        "support": 6345.0
+      }
+    }
+  },
+  "model_limitations": [
+    "Assumes standard operating schedules and nominal seasonal patterns.",
+    "Extreme unannounced transit disruptions (strikes, severe blizzards) are not explicitly simulated.",
+    "Predictions reflect unconstrained passenger travel intent 24 hours prior to departure."
+  ]
+}
