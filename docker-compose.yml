@@ -1,0 +1,24 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: bus_demand_api
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    environment:
+      - MODEL_PATH=models/bus_demand_model.joblib
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    container_name: bus_demand_ui
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      - api
