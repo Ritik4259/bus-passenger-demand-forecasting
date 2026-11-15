@@ -9,6 +9,11 @@ A production-ready, reproducible Machine Learning decision-support solution to f
 
 ---
 
+🚀 **Live Demos:**
+
+- **Streamlit UI:** [bus-passenger-demand.streamlit.app](https://bus-passenger-demand.streamlit.app/)
+- **Render API:** [bus-passenger-demand-forecasting-1.onrender.com](https://bus-passenger-demand-forecasting-1.onrender.com/)
+
 ## 🌟 Key Highlights
 
 - **Target Definition**: Models **unconstrained latent passenger demand** rather than capacity-censored boardings, enabling the detection of true overflow risks. ([ADR-0001](docs/adr/0001-unconstrained-demand-target.md)).
