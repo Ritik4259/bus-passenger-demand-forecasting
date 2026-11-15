@@ -26,36 +26,19 @@ from lightgbm import LGBMRegressor
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import Ridge
-from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from src.baseline import HistoricalRouteTimeBaseline
+from src.domain import compute_regression_metrics
 from src.features import (
     FEATURE_COLUMNS,
     TARGET_COLUMN,
+    CyclicalTimeTransformer,
     build_historical_lag_lookup,
     prepare_features,
     split_data_chronological,
 )
-
-
-def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
-    """Calculate MAE, RMSE, and WAPE."""
-    y_true = np.asarray(y_true, dtype=float)
-    y_pred = np.maximum(0.0, np.asarray(y_pred, dtype=float))
-
-    mae = float(mean_absolute_error(y_true, y_pred))
-    rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
-    sum_true = float(np.sum(y_true))
-    wape = float(np.sum(np.abs(y_true - y_pred)) / sum_true) if sum_true > 0 else 0.0
-
-    return {
-        "mae": round(mae, 3),
-        "rmse": round(rmse, 3),
-        "wape": round(wape, 4),
-        "wape_percentage": round(wape * 100.0, 2),
-    }
 
 
 def build_preprocessor() -> ColumnTransformer:
@@ -104,7 +87,7 @@ def train_and_evaluate(
     )
 
     # 2. Extract lag and cyclical features
-    print("Computing T - 24h lag features and cyclical encodings...")
+    print("Computing T - 24h lag features and rolling windows...")
     train_feat = prepare_features(train_raw)
     val_feat = prepare_features(val_raw)
     test_feat = prepare_features(test_raw)
@@ -114,11 +97,20 @@ def train_and_evaluate(
     lag_lookup_dict = build_historical_lag_lookup(train_feat)
 
     # Fill early missing lags in validation and test using the training lookup
-    global_med = lag_lookup_dict["global_median"]
+    g_stats = lag_lookup_dict.get("global_stats", {})
     for d in [train_feat, val_feat, test_feat]:
-        d["lag_24h_demand"] = d["lag_24h_demand"].fillna(global_med)
-        d["lag_7d_demand"] = d["lag_7d_demand"].fillna(global_med)
-        d["rolling_7d_mean"] = d["rolling_7d_mean"].fillna(global_med)
+        d["lag_24h_demand"] = d["lag_24h_demand"].fillna(
+            g_stats.get("lag_24h_median", lag_lookup_dict["global_median"])
+        )
+        d["lag_7d_demand"] = d["lag_7d_demand"].fillna(
+            g_stats.get("lag_7d_median", lag_lookup_dict["global_median"])
+        )
+        d["rolling_7d_mean"] = d["rolling_7d_mean"].fillna(
+            g_stats.get("rolling_7d_median", lag_lookup_dict["global_median"])
+        )
+        d["rolling_14d_mean"] = d["rolling_14d_mean"].fillna(
+            g_stats.get("rolling_14d_median", lag_lookup_dict["global_median"])
+        )
 
     X_train = train_feat[FEATURE_COLUMNS]
     y_train = train_feat[TARGET_COLUMN].values
@@ -140,8 +132,8 @@ def train_and_evaluate(
 
     val_preds_base = baseline.predict(X_val)
     test_preds_base = baseline.predict(X_test)
-    base_val_metrics = compute_metrics(y_val, val_preds_base)
-    base_test_metrics = compute_metrics(y_test, test_preds_base)
+    base_val_metrics = compute_regression_metrics(y_val, val_preds_base)
+    base_test_metrics = compute_regression_metrics(y_test, test_preds_base)
     print(f"Baseline Val Metrics:  {base_val_metrics}")
     print(f"Baseline Test Metrics: {base_test_metrics}")
     results.append(
@@ -163,6 +155,7 @@ def train_and_evaluate(
     print("\n--- Training Candidate 1: Ridge Regression Pipeline ---")
     ridge_pipeline = Pipeline(
         steps=[
+            ("cyclical", CyclicalTimeTransformer()),
             ("preprocessor", build_preprocessor()),
             ("regressor", Ridge(alpha=10.0, random_state=42)),
         ]
@@ -171,8 +164,8 @@ def train_and_evaluate(
 
     val_preds_ridge = ridge_pipeline.predict(X_val)
     test_preds_ridge = ridge_pipeline.predict(X_test)
-    ridge_val_metrics = compute_metrics(y_val, val_preds_ridge)
-    ridge_test_metrics = compute_metrics(y_test, test_preds_ridge)
+    ridge_val_metrics = compute_regression_metrics(y_val, val_preds_ridge)
+    ridge_test_metrics = compute_regression_metrics(y_test, test_preds_ridge)
     print(f"Ridge Val Metrics:  {ridge_val_metrics}")
     print(f"Ridge Test Metrics: {ridge_test_metrics}")
     results.append(
@@ -194,6 +187,7 @@ def train_and_evaluate(
     print("\n--- Training Candidate 2: LightGBM Pipeline ---")
     lgbm_pipeline = Pipeline(
         steps=[
+            ("cyclical", CyclicalTimeTransformer()),
             ("preprocessor", build_preprocessor()),
             (
                 "regressor",
@@ -215,8 +209,8 @@ def train_and_evaluate(
 
     val_preds_lgbm = lgbm_pipeline.predict(X_val)
     test_preds_lgbm = lgbm_pipeline.predict(X_test)
-    lgbm_val_metrics = compute_metrics(y_val, val_preds_lgbm)
-    lgbm_test_metrics = compute_metrics(y_test, test_preds_lgbm)
+    lgbm_val_metrics = compute_regression_metrics(y_val, val_preds_lgbm)
+    lgbm_test_metrics = compute_regression_metrics(y_test, test_preds_lgbm)
     print(f"LightGBM Val Metrics:  {lgbm_val_metrics}")
     print(f"LightGBM Test Metrics: {lgbm_test_metrics}")
     results.append(

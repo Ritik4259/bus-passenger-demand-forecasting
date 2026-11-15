@@ -21,43 +21,15 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.metrics import accuracy_score, classification_report, mean_absolute_error, mean_squared_error
+from sklearn.metrics import accuracy_score, classification_report
 
+from src.domain import ActionFlag, compute_action_flag, compute_regression_metrics
 from src.features import (
     FEATURE_COLUMNS,
     TARGET_COLUMN,
     prepare_features,
     split_data_chronological,
 )
-
-
-def compute_regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
-    """Calculate MAE, RMSE, and WAPE."""
-    y_true = np.asarray(y_true, dtype=float)
-    y_pred = np.maximum(0.0, np.asarray(y_pred, dtype=float))
-
-    mae = float(mean_absolute_error(y_true, y_pred))
-    rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
-    sum_true = float(np.sum(y_true))
-    wape = float(np.sum(np.abs(y_true - y_pred)) / sum_true) if sum_true > 0 else 0.0
-
-    return {
-        "sample_count": int(len(y_true)),
-        "mae": round(mae, 3),
-        "rmse": round(rmse, 3),
-        "wape": round(wape, 4),
-        "wape_percentage": round(wape * 100.0, 2),
-    }
-
-
-def determine_action_flag(occupancy_rate: float) -> str:
-    """Classify occupancy rate into operational action flag."""
-    if occupancy_rate < 0.50:
-        return "UNDERUTILIZED"
-    elif occupancy_rate <= 0.90:
-        return "OPTIMAL"
-    else:
-        return "OVERFLOW_RISK"
 
 
 def run_evaluation(
@@ -139,32 +111,31 @@ def run_evaluation(
             f"{route_id:10s} ({route_name:25s}) | Samples: {r_metrics['sample_count']:4d} | MAE: {r_metrics['mae']:5.2f} | RMSE: {r_metrics['rmse']:5.2f} | WAPE: {r_metrics['wape_percentage']:5.2f}%"
         )
 
-    # 4. Action Flag Decision Diagnostics
-    test_feat["true_occupancy"] = test_feat[TARGET_COLUMN] / test_feat["capacity"]
-    test_feat["pred_occupancy"] = test_feat["predicted_demand"] / test_feat["capacity"]
-
-    test_feat["true_action_flag"] = test_feat["true_occupancy"].apply(determine_action_flag)
-    test_feat["pred_action_flag"] = test_feat["pred_occupancy"].apply(determine_action_flag)
+    # 4. Action Flag Decision Diagnostics via shared domain logic
+    test_feat["true_action_flag"] = [
+        compute_action_flag(d, c)[0].value
+        for d, c in zip(test_feat[TARGET_COLUMN], test_feat["capacity"])
+    ]
+    test_feat["pred_action_flag"] = [
+        compute_action_flag(d, c)[0].value
+        for d, c in zip(test_feat["predicted_demand"], test_feat["capacity"])
+    ]
 
     flag_acc = float(accuracy_score(test_feat["true_action_flag"], test_feat["pred_action_flag"]))
     flag_report = classification_report(
-        test_feat["true_action_flag"],
-        test_feat["pred_action_flag"],
-        output_dict=True,
-        zero_division=0,
+        test_feat["true_action_flag"], test_feat["pred_action_flag"], output_dict=True
     )
+    overflow_recall = float(flag_report.get("OVERFLOW_RISK", {}).get("recall", 0.0))
 
     print("\n--------------------------------------------------------")
-    print("ACTION FLAG CLASSIFICATION ACCURACY")
+    print("OPERATIONAL ACTION FLAG PERFORMANCE")
     print("--------------------------------------------------------")
     print(f"Overall Action Flag Accuracy: {flag_acc * 100:.2f}%")
-    overflow_recall = flag_report.get("OVERFLOW_RISK", {}).get("recall", 0.0)
     print(f"OVERFLOW_RISK Recall:         {overflow_recall * 100:.2f}%")
 
-    # Construct complete JSON report
     report = {
         "model_name": model_name,
-        "evaluation_timestamp": pd.Timestamp.now("UTC").isoformat(),
+        "evaluation_timestamp": pd.Timestamp.now(tz="UTC").isoformat(),
         "test_dataset_size": len(test_feat),
         "overall_metrics": overall_metrics,
         "temporal_breakdown": {
@@ -185,15 +156,17 @@ def run_evaluation(
     with open(report_path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
 
-    print(f"\nEvaluation report successfully exported to {report_path}")
+    print(f"\nEvaluation report successfully saved to: {report_path}")
     return report
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Evaluate trained bus demand forecasting model.")
-    parser.add_argument("--data", type=str, default="data/synthetic_trips.csv", help="Input dataset path")
-    parser.add_argument("--model", type=str, default="models/bus_demand_model.joblib", help="Model artifact path")
-    parser.add_argument("--output", type=str, default="artifacts/evaluation_report.json", help="Report output path")
+    parser = argparse.ArgumentParser(description="Evaluate bus demand forecasting model.")
+    parser.add_argument("--data", type=str, default="data/synthetic_trips.csv", help="Dataset path")
+    parser.add_argument("--model", type=str, default="models/bus_demand_model.joblib", help="Model path")
+    parser.add_argument(
+        "--output", type=str, default="artifacts/evaluation_report.json", help="Report output path"
+    )
     args = parser.parse_args()
 
     run_evaluation(data_path=args.data, model_path=args.model, output_report_path=args.output)

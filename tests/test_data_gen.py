@@ -30,6 +30,7 @@ def test_schema_and_columns(sample_dataset: pd.DataFrame):
         "hour",
         "minute",
         "month",
+        "is_holiday",
         "is_raining",
         "temperature_c",
         "is_special_event",
@@ -41,6 +42,20 @@ def test_schema_and_columns(sample_dataset: pd.DataFrame):
     for col in required_cols:
         assert col in sample_dataset.columns, f"Missing required column: {col}"
     assert len(sample_dataset) > 0
+
+
+def test_train_arrival_surges_phg_lpu(sample_dataset: pd.DataFrame):
+    """Verify Sunday evening and Monday morning train spikes on PHG_LPU_202."""
+    railway_trips = sample_dataset[sample_dataset["route_id"] == "PHG_LPU_202"]
+
+    # Sunday evening peak train arrivals (DOW 6, hour between 18 and 21)
+    sun_eve = railway_trips[(railway_trips["day_of_week"] == 6) & (railway_trips["hour"].isin([18, 19, 20, 21]))]
+    # Sunday midday (DOW 6, hour between 11 and 14)
+    sun_mid = railway_trips[(railway_trips["day_of_week"] == 6) & (railway_trips["hour"].isin([11, 12, 13, 14]))]
+
+    assert sun_eve["passenger_demand"].mean() > sun_mid["passenger_demand"].mean(), (
+        "Sunday evening train arrivals must produce higher passenger demand than Sunday midday"
+    )
 
 
 def test_chronological_ordering(sample_dataset: pd.DataFrame):

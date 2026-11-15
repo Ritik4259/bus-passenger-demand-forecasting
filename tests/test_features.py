@@ -59,6 +59,10 @@ def test_strict_24h_lag_leakage_safe(trips_df: pd.DataFrame):
     """Prove that all historical lag features strictly observe a >= 24h separation from departure time."""
     df_lags = add_strict_24h_lag_features(trips_df)
 
+    # Verify both rolling_7d_mean and rolling_14d_mean are present
+    assert "rolling_7d_mean" in df_lags.columns
+    assert "rolling_14d_mean" in df_lags.columns
+
     # Check lag_time_24h vs departure_datetime
     valid_lags = df_lags.dropna(subset=["lag_24h_demand", "lag_time_24h"]).copy()
     assert len(valid_lags) > 0

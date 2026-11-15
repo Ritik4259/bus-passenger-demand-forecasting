@@ -20,6 +20,36 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from src.domain import ActionFlag, compute_action_flag
+
+# Indian / Punjab public & academic holiday calendar for 2026
+PUNJAB_ACADEMIC_HOLIDAYS_2026 = {
+    "2026-01-26",  # Republic Day
+    "2026-02-15",  # Maha Shivratri
+    "2026-03-03",  # Holi / Hola Mohalla
+    "2026-03-21",  # Id-ul-Fitr
+    "2026-03-27",  # Ram Navami
+    "2026-03-31",  # Mahavir Jayanti
+    "2026-04-03",  # Good Friday
+    "2026-04-14",  # Baisakhi / Dr. Ambedkar Jayanti
+    "2026-05-01",  # May Day
+    "2026-05-27",  # Id-ul-Zuha
+    "2026-05-31",  # Buddha Purnima
+    "2026-06-26",  # Muharram
+    "2026-08-15",  # Independence Day
+    "2026-09-04",  # Janmashtami
+    "2026-10-02",  # Gandhi Jayanti
+    "2026-10-20",  # Dussehra
+    "2026-11-08",  # Diwali
+    "2026-11-24",  # Guru Nanak Jayanti
+    "2026-12-25",  # Christmas
+}
+
+
+def is_punjab_holiday(dt: datetime) -> int:
+    """Return 1 if date falls on a Punjab academic/public holiday, else 0."""
+    return int(dt.strftime("%Y-%m-%d") in PUNJAB_ACADEMIC_HOLIDAYS_2026)
+
 
 @dataclass
 class RouteProfile:
@@ -60,7 +90,7 @@ DEFAULT_ROUTES: List[RouteProfile] = [
         base_demand=26.0,
         am_peak_multiplier=1.8,
         pm_peak_multiplier=1.9,
-        weekend_multiplier=1.65,  # Spikes heavily Sunday evening & Monday morning for train arrivals
+        weekend_multiplier=0.85,  # Sunday daytime baseline is modest; spikes on Sun evening & Mon morning for trains
         rain_sensitivity=1.15,
         origin="Phagwara Junction Railway Station",
         destination="LPU Campus Uni-Mall",
@@ -121,10 +151,10 @@ def _calculate_diurnal_factor(hour: float, route: RouteProfile) -> float:
 
     if route.route_id == "INT_CAMPUS_404":
         # Intra-campus class dismissals
-        b1 = 1.8 * np.exp(-0.5 * ((hour - 8.75) / 0.8) ** 2)
-        b2 = 1.6 * np.exp(-0.5 * ((hour - 13.0) / 0.9) ** 2)
-        b3 = 2.0 * np.exp(-0.5 * ((hour - 17.0) / 0.9) ** 2)
-        return max(0.15, float(0.40 + b1 + b2 + b3))
+        morning_class_burst = 1.8 * np.exp(-0.5 * ((hour - 8.75) / 0.8) ** 2)
+        afternoon_class_burst = 1.6 * np.exp(-0.5 * ((hour - 13.0) / 0.9) ** 2)
+        evening_class_burst = 2.0 * np.exp(-0.5 * ((hour - 17.0) / 0.9) ** 2)
+        return max(0.15, float(0.40 + morning_class_burst + afternoon_class_burst + evening_class_burst))
 
     if route.route_id == "LPU_MDL_303":
         # Evening leisure curve
@@ -207,6 +237,9 @@ def generate_synthetic_trips(
         is_weekend = day_of_week in (5, 6)
         month = day_date.month
 
+        # Pre-check Punjab academic holiday
+        is_holiday_day = is_punjab_holiday(day_date)
+
         # Occasional university fest or sports meet shock
         event_route_id = None
         if rng.uniform(0, 1) < 0.08:
@@ -221,22 +254,39 @@ def generate_synthetic_trips(
                 hour=service_end_hour, minute=59, second=0, microsecond=0
             )
 
-            # Route-specific day-of-week multipliers
-            dow_factor = route.weekend_multiplier if is_weekend else 1.0
-
-            # Special dynamic: Sunday night train arrival surge on PHG_LPU_202
-            if route.route_id == "PHG_LPU_202" and day_of_week == 6:
-                dow_factor = 2.1
-            # Special dynamic: Friday evening leisure surge on LPU_MDL_303
-            elif route.route_id == "LPU_MDL_303" and day_of_week == 4:
-                dow_factor = 1.4
-
             monthly_factor = _calculate_monthly_factor(month)
             rain_factor = route.rain_sensitivity if is_raining else 1.0
 
             while current_trip_time <= end_trip_time:
                 hour_float = current_trip_time.hour + current_trip_time.minute / 60.0
                 diurnal_factor = _calculate_diurnal_factor(hour_float, route)
+
+                # Route-specific day-of-week & train timetable dynamics
+                trip_dow_factor = route.weekend_multiplier if is_weekend else 1.0
+                if route.route_id == "PHG_LPU_202":
+                    if day_of_week == 6 and 17.0 <= hour_float <= 22.0:
+                        trip_dow_factor = 2.4  # Sunday evening train arrivals from hostels/homes
+                    elif day_of_week == 0 and hour_float <= 10.0:
+                        trip_dow_factor = 2.0  # Monday morning long-distance train arrivals
+                    elif is_weekend:
+                        trip_dow_factor = route.weekend_multiplier
+                    else:
+                        trip_dow_factor = 1.0
+                elif route.route_id == "LPU_MDL_303":
+                    if day_of_week == 4 and hour_float >= 16.0:
+                        trip_dow_factor = 1.4  # Friday evening dining / shopping
+                    elif is_weekend:
+                        trip_dow_factor = route.weekend_multiplier
+                    else:
+                        trip_dow_factor = 1.0
+
+                # Academic holiday demand adjustment
+                holiday_factor = 1.0
+                if is_holiday_day:
+                    if route.route_id in ("INT_CAMPUS_404", "LPU_JAL_101"):
+                        holiday_factor = 0.55  # Reduced college commute
+                    elif route.route_id == "LPU_MDL_303":
+                        holiday_factor = 1.30  # Holiday recreation boost
 
                 # Special event multiplier
                 is_event_trip = False
@@ -248,10 +298,11 @@ def generate_synthetic_trips(
                 expected_demand = (
                     route.base_demand
                     * diurnal_factor
-                    * dow_factor
+                    * trip_dow_factor
                     * monthly_factor
                     * rain_factor
                     * event_mult
+                    * holiday_factor
                 )
 
                 # Stochastic variance via negative binomial sampling
@@ -264,13 +315,9 @@ def generate_synthetic_trips(
                 boarded_passengers = min(latent_demand, capacity)
                 occupancy_rate = latent_demand / capacity
 
-                # Canonical operational action flag
-                if occupancy_rate < 0.50:
-                    action_flag = "UNDERUTILIZED"
-                elif occupancy_rate <= 0.90:
-                    action_flag = "OPTIMAL"
-                else:
-                    action_flag = "OVERFLOW_RISK"
+                # Canonical operational action flag via shared domain logic
+                action_flag_enum, _ = compute_action_flag(latent_demand, capacity)
+                action_flag = action_flag_enum.value
 
                 records.append(
                     {
@@ -286,6 +333,7 @@ def generate_synthetic_trips(
                         "hour": current_trip_time.hour,
                         "minute": current_trip_time.minute,
                         "month": month,
+                        "is_holiday": int(is_holiday_day),
                         "is_raining": int(is_raining),
                         "temperature_c": weather_info["temperature_c"],
                         "is_special_event": int(is_event_trip),

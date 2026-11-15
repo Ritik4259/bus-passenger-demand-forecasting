@@ -101,9 +101,9 @@ Evaluated across strictly chronological splits using Mean Absolute Error (MAE), 
 
 | Model Architecture | Val MAE | Val RMSE | Val WAPE | Test MAE | Test RMSE | Test WAPE | Analysis |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| **Historical Baseline** | 7.924 | 11.901 | 29.86% | 8.726 | 12.141 | 43.99% | Degrades on unseen test distribution shifts (exam season). |
-| **Ridge Regression Pipeline** | 10.195 | 15.115 | 38.42% | 8.163 | 11.152 | 41.16% | Underfits; linear additive plane cannot model sharp class dismissals. |
-| **LightGBM Pipeline** | **8.066** | **11.862** | **30.40%** | **7.404** | **10.131** | **37.33%** | **Best overall generalization.** Lowest test MAE (7.40) and test WAPE (37.33%). |
+| **Historical Baseline** | 8.014 | 12.300 | 31.40% | 8.518 | 11.913 | 45.10% | Degrades on unseen test distribution shifts (exam season). |
+| **Ridge Regression Pipeline** | 10.073 | 15.385 | 39.47% | 7.616 | 10.953 | 40.33% | Underfits; linear additive plane cannot model sharp class dismissals. |
+| **LightGBM Pipeline** | **7.656** | **11.570** | **30.00%** | **6.440** | **8.845** | **34.10%** | **Best overall generalization.** Lowest test MAE (6.44) and test WAPE (34.10%). |
 
 LightGBM was selected as the production model and serialized into [models/bus_demand_model.joblib](file:///c:/Users/bhard/Desktop/Assignment/models/bus_demand_model.joblib) alongside the historical training lookup dictionary.
 
@@ -118,28 +118,28 @@ Peak hours are defined as 7:00–10:59 AM and 17:00–20:59 PM:
 
 | Time Window | Trip Count | MAE (Pax) | RMSE | WAPE (%) | Operational Significance |
 | :--- | :---: | :---: | :---: | :---: | :--- |
-| **Peak Hours (7-10 AM & 5-8 PM)** | 2,673 | 8.86 | 12.02 | **36.53%** | Higher absolute passenger volume; lower percentage error. |
-| **Off-Peak Hours** | 3,672 | 6.34 | 8.49 | **38.19%** | Lower passenger volume; slightly higher percentage variance due to low denominator. |
+| **Peak Hours (7-10 AM & 5-8 PM)** | 2,673 | 7.56 | 10.24 | **32.32%** | Higher absolute passenger volume; lower percentage error. |
+| **Off-Peak Hours** | 3,672 | 5.63 | 7.67 | **36.04%** | Lower passenger volume; slightly higher percentage variance due to low denominator. |
 
 ### 5.2 Per-Route Performance Breakdown
 | Route ID | Corridor Name | Capacity | Samples | MAE | RMSE | WAPE (%) | Route Characteristics |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
-| **`INT_CAMPUS_404`** | LPU Main Gate – Block 34 Campus Loop | 60 | 2,052 | 7.54 | 10.41 | **36.52%** | High frequency; sharp timetable peaks. |
-| **`LPU_JAL_101`** | LPU Main Gate – Jalandhar Bus Stand | 50 | 1,539 | 7.52 | 10.05 | **36.61%** | Heavy daily student/staff NH-44 commute. |
-| **`PHG_LPU_202`** | Phagwara Junction Station – LPU Campus | 40 | 1,026 | 8.08 | 10.20 | **37.76%** | High variance driven by weekend train schedules. |
-| **`LPU_MDL_303`** | LPU Campus – Model Town, Jalandhar | 45 | 1,026 | 8.89 | 12.17 | **38.36%** | Weekend evening dining surges. |
-| **`JAL_ASR_505`** | Jalandhar Cantt – Phagwara GT Road | 35 | 702 | 3.60 | 4.54 | **41.12%** | Sparse rural feeder; lowest absolute error (3.60). |
+| **`INT_CAMPUS_404`** | LPU Main Gate – Block 34 Campus Loop | 60 | 2,052 | 6.87 | 9.74 | **34.16%** | High frequency; sharp timetable peaks. |
+| **`LPU_JAL_101`** | LPU Main Gate – Jalandhar Bus Stand | 50 | 1,539 | 6.69 | 8.85 | **33.56%** | Heavy daily student/staff NH-44 commute. |
+| **`PHG_LPU_202`** | Phagwara Junction Station – LPU Campus | 40 | 1,026 | 6.49 | 8.43 | **35.45%** | High variance driven by weekend train schedules. |
+| **`LPU_MDL_303`** | LPU Campus – Model Town, Jalandhar | 45 | 1,026 | 7.05 | 9.54 | **31.45%** | Weekend evening dining surges. |
+| **`JAL_ASR_505`** | Jalandhar Cantt – Phagwara GT Road | 35 | 702 | 3.69 | 4.63 | **42.16%** | Sparse rural feeder; lowest absolute error (3.69). |
 
 ### 5.3 Capacity Action Flag Classification Accuracy
-- **Overall Action Flag Accuracy**: **74.86%**
-- **`OVERFLOW_RISK` Recall**: **76.72%** (catches over 3 out of 4 major overcrowding events 24 hours in advance!)
+- **Overall Action Flag Accuracy**: **79.04%**
+- **`OVERFLOW_RISK` Recall**: **62.53%** (Precision: 55.51%, F1: 58.81%)
 
 ---
 
 ## 6. In-Depth Error Analysis
 
-### 6.1 The Feeder Line Disparity (`JAL_ASR_505` WAPE = 41.12%)
-Why does `JAL_ASR_505` exhibit the highest WAPE (41.12%) despite having the lowest absolute MAE (3.60 passengers)?
+### 6.1 The Feeder Line Disparity (`JAL_ASR_505` WAPE = 42.16%)
+Why does `JAL_ASR_505` exhibit the highest WAPE (42.16%) despite having the lowest absolute MAE (3.69 passengers)?
 
 This is a classic mathematical property of the WAPE formulation:
 $$\text{WAPE} = \frac{\sum |y_i - \hat{y}_i|}{\sum y_i}$$
@@ -168,7 +168,7 @@ When the university introduces a new route (e.g. connecting a newly built off-ca
 The data pipeline processes aggregated trip-level counts (`trip_id`, `route_id`, `departure_datetime`, `passenger_demand`). No student names, roll numbers, payment tokens, or mobile device GPS traces are ingested or stored.
 
 ### 7.3 Mandatory Human-in-the-Loop Review
-The ML endpoint functions strictly as a **decision-support advisory system**, not an automated actuation system. Automated cancellation of scheduled runs is explicitly prohibited to prevent stranding vulnerable students who rely on public transit.
+The ML endpoint functions strictly as a **decision-support advisory system**, not an automated actuation system. Automated cancellation of scheduled trips is explicitly prohibited to prevent stranding vulnerable students who rely on public transit.
 
 ---
 
@@ -177,6 +177,6 @@ The ML endpoint functions strictly as a **decision-support advisory system**, no
 The Bus Passenger Demand Forecasting System provides a robust, leakage-free decision support tool grounded in the Punjab / LPU transit ecosystem:
 - **Grounding in Local Corridors**: Real-world transit corridors, timetables, and train arrival dynamics.
 - **Leakage-Safe Architecture**: Enforced $T - 24\text{h}$ feature cutoff and chronological splits proven by automated unit tests.
-- **High-Recall Overflow Protection**: LightGBM achieves **76.72% recall on OVERFLOW_RISK**, preventing student strandings.
+- **High-Accuracy Overflow Protection**: LightGBM achieves **79.04% overall action flag accuracy** and **62.53% recall on OVERFLOW_RISK**, preventing student strandings.
 - **Production Interfaces**: FastAPI inference endpoint with Pydantic validation, interactive Plotly demand curves, Pydeck corridor mapping, and seat occupancy breakdowns.
-- **100% Test Coverage**: 19 automated Pytest integration and regression tests passing.
+- **100% Test Coverage**: 21 automated Pytest integration and regression tests passing.

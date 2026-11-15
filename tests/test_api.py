@@ -113,6 +113,22 @@ def test_cold_start_unknown_route(client: TestClient):
     assert data["action_flag"] in ["UNDERUTILIZED", "OPTIMAL", "OVERFLOW_RISK"]
 
 
+def test_predict_canonical_capacity_parameter(client: TestClient):
+    """Verify that canonical 'capacity' parameter is accepted in place of 'bus_capacity'."""
+    payload = {
+        "route_id": "LPU_JAL_101",
+        "departure_datetime": "2026-07-01T08:30:00",
+        "capacity": 50,
+        "is_raining": 0,
+        "temperature_c": 20.0,
+    }
+    response = client.post("/predict", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["capacity"] == 50
+    assert data["bus_capacity"] == 50
+
+
 def test_input_validation_errors(client: TestClient):
     """Verify Pydantic rejects invalid inputs with 422 Unprocessable Entity."""
     # Invalid capacity <= 0

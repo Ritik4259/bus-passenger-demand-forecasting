@@ -3,7 +3,7 @@
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-green.svg)](https://fastapi.tiangolo.com/)
 [![LightGBM](https://img.shields.io/badge/Model-LightGBM-orange.svg)](https://lightgbm.readthedocs.io/)
-[![Tests Passing](https://img.shields.io/badge/pytest-19%20passed-brightgreen.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/pytest-21%20passed-brightgreen.svg)](tests/)
 
 A production-ready, reproducible Machine Learning decision-support solution to forecast bus passenger demand by route and departure timestamp **24 hours prior to departure ($T - 24\text{h}$)**. Designed for transit dispatchers and scheduling operators to make human-in-the-loop decisions on vehicle sizing and overflow prevention.
 
@@ -15,10 +15,10 @@ A production-ready, reproducible Machine Learning decision-support solution to f
 - **Zero Temporal Leakage**: Enforces strict chronological data splitting (70% Train, 15% Val, 15% Test) and a strict $T - 24\text{h}$ feature cutoff rule for all historical lag statistics ([ADR-0002](docs/adr/0002-leakage-safe-24h-feature-store.md)).
 - **Exogenous Demand Architecture**: Vehicle capacity is strictly excluded from regressor input features to prevent reverse causality ([ADR-0004](docs/adr/0004-exogenous-demand-capacity-exclusion.md)).
 - **Benchmarked Models**: Evaluates a scikit-learn compatible `HistoricalRouteTimeBaseline`, regularized `RidgeRegressionPipeline`, and gradient boosted `LightGBMPipeline`.
-- **Production Artifact**: Encapsulates preprocessing transformations, cyclical datetime encoders, and estimator inside a unified `.joblib` pipeline.
+- **Production Artifact**: Encapsulates preprocessing transformations, cyclical datetime encoders, and estimator inside a unified `.joblib` pipeline ([ADR-0003](docs/adr/0003-unified-pipeline-serialization.md)).
 - **FastAPI Endpoint**: Validated REST API (`POST /predict`, `GET /health`) returning demand, occupancy rate, capacity action flags, and limitations.
 - **Streamlit Demo UI**: Interactive dispatcher interface featuring live what-if fleet sizing simulations.
-- **100% Test Coverage**: 19 automated Pytest integration and regression tests.
+- **100% Test Coverage**: 21 automated Pytest integration and regression tests.
 
 ---
 
@@ -40,19 +40,20 @@ Assignment/
 │   └── agents/                           # Engineering skill guidelines
 ├── src/
 │   ├── __init__.py
+│   ├── domain.py                         # ActionFlag enum, compute_action_flag, compute_regression_metrics
 │   ├── data_gen.py                       # Synthetic trip dataset generator (42,300 trips)
-│   ├── features.py                       # Chronological split, cyclical & 24h lag pipeline
+│   ├── features.py                       # Chronological split, CyclicalTimeTransformer & 24h lag pipeline
 │   ├── baseline.py                       # Scikit-learn HistoricalRouteTimeBaseline estimator
-│   ├── train.py                          # Pipeline benchmarking and model serialization
+│   ├── train.py                          # Unified Pipeline benchmarking and model serialization
 │   ├── evaluate.py                       # Granular evaluation (peak/off-peak, per-route)
 │   └── app.py                            # Production FastAPI inference service
 ├── app/
 │   └── ui.py                             # Interactive Streamlit dispatcher demo UI
 ├── tests/
-│   ├── test_data_gen.py                  # Censoring, schema, and diurnal curve tests
+│   ├── test_data_gen.py                  # Censoring, schema, train spikes, and diurnal curve tests
 │   ├── test_features.py                  # Cryptographic non-overlapping split & 24h lag tests
 │   ├── test_baseline.py                  # Sklearn compatibility, training isolation & fallbacks
-│   └── test_api.py                       # FastAPI TestClient schema and flag transition tests
+│   └── test_api.py                       # FastAPI TestClient schema, capacity alias, and flag transition tests
 ├── models/
 │   └── bus_demand_model.joblib           # Production model artifact + bundled lookup table
 ├── artifacts/
@@ -137,8 +138,9 @@ curl -X POST "http://127.0.0.1:8000/predict" \
   "route_id": "LPU_JAL_101",
   "departure_datetime": "2026-08-10T08:00:00",
   "bus_capacity": 50,
-  "predicted_passenger_demand": 64.2,
-  "predicted_occupancy_percentage": 128.4,
+  "capacity": 50,
+  "predicted_passenger_demand": 63.9,
+  "predicted_occupancy_percentage": 127.8,
   "action_flag": "OVERFLOW_RISK",
   "operational_recommendation": "High risk of passenger overflow and denied boardings. Dispatch supplemental relief bus or upsize vehicle to high-capacity articulated fleet.",
   "model_name": "LightGBM",
@@ -163,15 +165,15 @@ Evaluated on 6,345 chronologically isolated test trips:
 
 | Candidate Model | Val MAE | Val RMSE | Val WAPE | Test MAE | Test RMSE | Test WAPE | Status |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Historical Baseline** | 7.681 | 11.733 | 28.61% | 6.558 | 9.373 | 27.52% | Benchmark |
-| **Ridge Regression Pipeline** | 9.680 | 14.053 | 36.05% | 8.827 | 12.022 | 37.04% | Underfitting non-linear peaks |
-| **LightGBM Pipeline** | **7.204** | **10.554** | **26.83%** | **6.309** | **9.097** | **26.48%** | **Production Selected** |
+| **Historical Baseline** | 8.014 | 12.300 | 31.40% | 8.518 | 11.913 | 45.10% | Benchmark |
+| **Ridge Regression Pipeline** | 10.073 | 15.385 | 39.47% | 7.616 | 10.953 | 40.33% | Underfitting non-linear peaks |
+| **LightGBM Pipeline** | **7.656** | **11.570** | **30.00%** | **6.440** | **8.845** | **34.10%** | **Production Selected** |
 
 ### Granular Test Evaluation
-- **Peak Hours (7-10 AM & 5-8 PM)**: MAE 7.62 | RMSE 10.87 | **WAPE 25.46%**
-- **Off-Peak Hours**: MAE 5.35 | RMSE 7.54 | **WAPE 27.62%**
-- **Action Flag Accuracy**: **78.88%**
-- **Overflow Risk Recall**: **55.29%** (detects major capacity surges 24h in advance)
+- **Peak Hours (7-10 AM & 5-8 PM)**: MAE 7.56 | RMSE 10.24 | **WAPE 32.32%**
+- **Off-Peak Hours**: MAE 5.63 | RMSE 7.67 | **WAPE 36.04%**
+- **Action Flag Accuracy**: **79.04%**
+- **Overflow Risk Recall**: **62.53%** (detects major capacity surges 24h in advance)
 
 ---
 

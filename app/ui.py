@@ -27,9 +27,10 @@ import requests
 import streamlit as st
 
 from src.app import PredictRequest, extract_inference_features
+from src.domain import ActionFlag, compute_action_flag
 
 st.set_page_config(
-    page_title="LPU & Punjab Transit Dispatcher Decision Support",
+    page_title="LPU & Punjab Transit Transport Coordinator Decision Support",
     page_icon="🚌",
     layout="wide",
 )
@@ -47,6 +48,7 @@ ROUTE_WAYPOINTS = {
             {"name": "LPU Gate 1", "lat": 31.2536, "lon": 75.7037, "type": "Origin"},
             {"name": "Rama Mandi Chowk", "lat": 31.3090, "lon": 75.6420, "type": "Interchange"},
             {"name": "PAP Chowk", "lat": 31.3185, "lon": 75.6180, "type": "Transit Stop"},
+            {"name": "BMC Chowk", "lat": 31.3210, "lon": 75.5900, "type": "Transit Stop"},
             {"name": "Jalandhar City Bus Stand", "lat": 31.3260, "lon": 75.5762, "type": "Destination"},
         ],
     },
@@ -133,20 +135,14 @@ def run_prediction_api_or_fallback(payload: Dict[str, Any]) -> Dict[str, Any]:
     pred = round(pred, 1)
     occ = round((pred / req.bus_capacity) * 100.0, 1)
 
-    if occ < 50.0:
-        flag = "UNDERUTILIZED"
-        rec = "Low occupancy forecasted. Consider assigning a smaller minibus or consolidating departures."
-    elif occ <= 90.0:
-        flag = "OPTIMAL"
-        rec = "Balanced student/passenger load. Assigned vehicle capacity safely matches expected demand."
-    else:
-        flag = "OVERFLOW_RISK"
-        rec = "High risk of passenger overflow & stranded students. Dispatch a supplemental relief coach."
+    action_flag_enum, rec = compute_action_flag(pred, req.effective_capacity)
+    flag = action_flag_enum.value
 
     return {
         "route_id": req.route_id,
         "departure_datetime": req.departure_datetime.isoformat(),
-        "bus_capacity": req.bus_capacity,
+        "bus_capacity": req.effective_capacity,
+        "capacity": req.effective_capacity,
         "predicted_passenger_demand": pred,
         "predicted_occupancy_percentage": occ,
         "action_flag": flag,
@@ -164,7 +160,7 @@ def run_prediction_api_or_fallback(payload: Dict[str, Any]) -> Dict[str, Any]:
 # =========================================================
 # HEADER
 # =========================================================
-st.title("🚌 LPU & Punjab Regional Bus Dispatch Decision Support")
+st.title("🚌 LPU & Punjab Regional Bus Transport Coordinator Decision Support")
 st.markdown(
     "**Operational Decision-Support System** for the Phagwara – Jalandhar – Lovely Professional University (NH-44) corridor. "
     "Predicts **unconstrained student & commuter demand 24 hours in advance** to prevent passenger stranding."
@@ -174,7 +170,7 @@ st.write("---")
 # =========================================================
 # SIDEBAR CONTROLS
 # =========================================================
-st.sidebar.header("🕹️ Dispatch Controls")
+st.sidebar.header("🕹️ Transport Coordinator Controls")
 
 route_choice = st.sidebar.selectbox(
     "Select Transit Corridor",
@@ -416,14 +412,14 @@ try:
             dtick=1,
             gridcolor="#f0f2f6",
         ),
-        yaxis=dict(title="Passenger Headcount (Unconstrained Demand)", gridcolor="#f0f2f6"),
+        yaxis=dict(title="Passenger Demand (Unconstrained)", gridcolor="#f0f2f6"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         margin=dict(l=40, r=40, t=40, b=40),
         height=380,
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # CSV Download Button for Dispatchers
+    # CSV Download Button for Transport Coordinators
     daily_schedule_df = pd.DataFrame(hourly_rows)
     csv_bytes = daily_schedule_df.to_csv(index=False).encode("utf-8")
     st.download_button(
@@ -542,12 +538,13 @@ try:
     sim_rows = []
     for cap in simulation_capacities:
         sim_occ = round((pred_demand / cap) * 100.0, 1)
-        if sim_occ < 50.0:
-            sim_flag = "UNDERUTILIZED ℹ️"
-        elif sim_occ <= 90.0:
-            sim_flag = "OPTIMAL ✅"
-        else:
-            sim_flag = "OVERFLOW_RISK 🚨"
+        sim_flag_enum, _ = compute_action_flag(pred_demand, cap)
+        badge = (
+            "ℹ️"
+            if sim_flag_enum == ActionFlag.UNDERUTILIZED
+            else ("✅" if sim_flag_enum == ActionFlag.OPTIMAL else "🚨")
+        )
+        sim_flag = f"{sim_flag_enum.value} {badge}"
 
         sim_rows.append(
             {

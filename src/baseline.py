@@ -34,6 +34,46 @@ class HistoricalRouteTimeBaseline(RegressorMixin, BaseEstimator):
         self.dow_col = dow_col
         self.hour_col = hour_col
 
+    def _extract_cols(
+        self, X: Union[pd.DataFrame, np.ndarray]
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Safely extract (route_id, day_of_week, hour) arrays whether input is DataFrame or ndarray."""
+        if isinstance(X, pd.DataFrame):
+            hour_col = (
+                self.hour_col
+                if self.hour_col in X.columns
+                else ("departure_hour" if "departure_hour" in X.columns else self.hour_col)
+            )
+            routes = X[self.route_col].astype(str).values
+            dows = X[self.dow_col].astype(int).values
+            hours = X[hour_col].astype(int).values
+            return routes, dows, hours
+
+        arr = np.asarray(X)
+        if hasattr(self, "feature_names_in_") and self.feature_names_in_ is not None:
+            names = list(self.feature_names_in_)
+            route_idx = names.index(self.route_col) if self.route_col in names else 0
+            dow_idx = names.index(self.dow_col) if self.dow_col in names else 1
+            hour_col_name = (
+                self.hour_col
+                if self.hour_col in names
+                else ("departure_hour" if "departure_hour" in names else None)
+            )
+            hour_idx = names.index(hour_col_name) if hour_col_name in names else 2
+        else:
+            if arr.shape[1] == 3:
+                route_idx, dow_idx, hour_idx = 0, 1, 2
+            elif arr.shape[1] >= 4:
+                # Default FEATURE_COLUMNS order: route_id (0), is_weekend (1), day_of_week (2), hour (3)
+                route_idx, dow_idx, hour_idx = 0, 2, 3
+            else:
+                route_idx, dow_idx, hour_idx = 0, 1, 2
+
+        routes = arr[:, route_idx].astype(str)
+        dows = arr[:, dow_idx].astype(int)
+        hours = arr[:, hour_idx].astype(int)
+        return routes, dows, hours
+
     def fit(
         self,
         X: Union[pd.DataFrame, np.ndarray],
@@ -49,25 +89,19 @@ class HistoricalRouteTimeBaseline(RegressorMixin, BaseEstimator):
             self
         """
         if isinstance(X, pd.DataFrame):
-            df_x = X.copy()
-        else:
-            # Assume columns: [route_id, ..., day_of_week, hour]
-            df_x = pd.DataFrame(X)
-            # Default to first 3 columns or mapped names
-            if 0 in df_x.columns and 1 in df_x.columns and 2 in df_x.columns:
-                df_x = df_x.rename(
-                    columns={0: self.route_col, 1: self.dow_col, 2: self.hour_col}
-                )
+            self.feature_names_in_ = np.array(X.columns, dtype=object)
 
         y_arr = np.asarray(y, dtype=float)
         if len(y_arr) == 0:
             raise ValueError("Training data y cannot be empty.")
 
+        routes, dows, hours = self._extract_cols(X)
+
         df_fit = pd.DataFrame(
             {
-                "route_id": df_x[self.route_col].astype(str).values,
-                "day_of_week": df_x[self.dow_col].astype(int).values,
-                "hour": df_x[self.hour_col].astype(int).values,
+                "route_id": routes,
+                "day_of_week": dows,
+                "hour": hours,
                 "target": y_arr,
             }
         )
@@ -107,18 +141,7 @@ class HistoricalRouteTimeBaseline(RegressorMixin, BaseEstimator):
         """Predict passenger demand for input trips using fitted training lookups."""
         check_is_fitted(self, attributes=["is_fitted_", "group_medians_"])
 
-        if isinstance(X, pd.DataFrame):
-            df_x = X
-        else:
-            df_x = pd.DataFrame(X)
-            if 0 in df_x.columns and 1 in df_x.columns and 2 in df_x.columns:
-                df_x = df_x.rename(
-                    columns={0: self.route_col, 1: self.dow_col, 2: self.hour_col}
-                )
-
-        routes = df_x[self.route_col].astype(str).values
-        dows = df_x[self.dow_col].astype(int).values
-        hours = df_x[self.hour_col].astype(int).values
+        routes, dows, hours = self._extract_cols(X)
 
         preds = np.empty(len(routes), dtype=float)
         for i in range(len(routes)):
